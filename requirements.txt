@@ -1,0 +1,26 @@
+# Core dependencies
+langchain-community
+langchain-huggingface
+faiss-cpu
+pymupdf
+python-dotenv
+requests
+transformers
+torch
+accelerate
+
+
+# Text processing
+sentence-transformers
+nltk
+tiktoken
+
+# CLI enhancements
+rich
+prompt-toolkit
+pygments
+
+# Utility libraries
+tqdm
+python-dateutil
+pathlib
