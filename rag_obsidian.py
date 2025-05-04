@@ -4,8 +4,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-import fitz  # PyMuPDF
-import requests
+import fitz
+import torch
 from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import FAISS
@@ -29,17 +29,20 @@ class ObsidianRAG:
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             device_map="auto",
-            torch_dtype="auto"
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True
         )
         self.pipe = pipeline(
             "text-generation",
             model=self.model,
             tokenizer=self.tokenizer,
             pad_token_id=self.tokenizer.eos_token_id,
-            do_sample=True,
             device_map="cpu",
+            max_new_tokens=256,
+            do_sample=True,
             temperature=0.3,
-            max_new_tokens=os.getenv("MAX_NEW_TOKENS"),
+            top_p=0.95,
+            repetition_penalty=1.1,
             return_full_text=False 
         )
 
@@ -120,29 +123,26 @@ class ObsidianRAG:
         
         context = "\n\n".join(context_parts)
         
-        prompt = f"""Instruct: You are a research assistant. Answer this question based on your knowledgment, this conversation and based on the provided documents.
+        prompt = f"""
+        Instruct: You are a research assistant. Answer this question based on your knowledgment, this conversation and based on the provided documents.
 
-Documents:
-{context}
+        Documents:
+        {context}
 
-Rules:
-1. If unsure, say "Not in my sources"
-2. Cite sources like [1]
-3. Never invent information</s>
-<|user|>
-{question}</s>
-<|assistant|>
-"""
+        Rules:
+        1. If unsure, say "Not in my sources"
+        2. Cite sources like [1]
+        3. Never invent information
+
+        Question:
+        {question}
+        Answer:
+        """
         
         try:
-            response = self.pipe(
-                prompt,
-                top_p=0.95,
-                repetition_penalty=1.15
-            )[0]['generated_text']
+            response = self.pipe(prompt)[0]['generated_text']
             
             answer = response.split("Answer:")[-1].strip()
-            
             answer = answer.split("Question:")[0].strip()
             
         except Exception as e:
@@ -158,6 +158,16 @@ Rules:
         if re.search(r'\[\d+\]', answer) and self.source_map:
             answer += "\n\nREFERENCES:\n" + "\n".join(
                 f"{k} {v}" for k, v in self.source_map.items()
+            )
+        
+        self.last_sources = {f"[{i+1}]": doc.metadata['source'] for i, doc in enumerate(docs)}
+        
+        # ... generation logic ...
+        
+        # Add references to response
+        if self.last_sources:
+            answer += "\n\nReferences:\n" + "\n".join(
+                f"{key}: {value}" for key, value in self.last_sources.items()
             )
         
         return answer
@@ -179,14 +189,22 @@ class ConversationManager:
             self.current_chat = self.conversation_dir / f"chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
             
         try:
-            frontmatter = "---\ntags: [chat]\navoid_indexing: true\n---\n\n"
+            sources = getattr(self.rag, 'last_sources', {})
+            frontmatter = f"""
+---
+tags: [chat]
+sources: {list(sources.values())}
+---
+
+# Conversation History - {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+"""
             content = f"# Conversation - {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
             
             for msg in self.conversation:
                 role = "User" if msg['role'] == 'user' else "Assistant"
                 content += f"## {role}\n{msg['content']}\n\n"
             
-            # Write to file with error handling
             with open(self.current_chat, 'w', encoding='utf-8') as f:
                 f.write(frontmatter + content)
                 
@@ -223,12 +241,35 @@ class ConversationManager:
                 self.save_chat()
                 break
 
+    def load_chat(self, filename):
+        chat_path = self.conversation_dir / filename
+        if chat_path.exists():
+            with open(chat_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Parse conversation history
+            self.conversation = []
+            current_role = None
+            for line in content.split('\n'):
+                if line.startswith('## User:'):
+                    current_role = 'user'
+                    self.conversation.append({"role": current_role, "content": line[8:].strip()})
+                elif line.startswith('## Assistant:'):
+                    current_role = 'assistant'
+                    self.conversation.append({"role": current_role, "content": line[13:].strip()})
+                elif current_role:
+                    self.conversation[-1]["content"] += "\n" + line.strip()
+
+            self.current_chat = chat_path
+            print(f"Loaded conversation with {len(self.conversation)} messages")
+            return True
+        return False
 
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Obsidian Research Assistant')
     parser.add_argument('--init', help='Initialize vector store', action='store_true')
-    # parser.add_argument('--strict', help='Enable strict sourcing mode', action='store_true')
+    parser.add_argument('--load', type=str, help='Load existing conversation file')
     args = parser.parse_args()
     
     rag = ObsidianRAG()
@@ -238,7 +279,14 @@ def main():
         print("Vector store created!")
         return
     
-    ConversationManager(rag).chat_loop()
+    cm = ConversationManager(rag)
+    if args.load:
+        if cm.load_chat(args.load):
+            print("Continuing conversation...")
+    else:
+        cm.new_chat()
+
+    cm.chat_loop()
 
 if __name__ == "__main__":
     main()
