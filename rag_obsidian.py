@@ -283,8 +283,6 @@ def main():
     if args.load:
         if cm.load_chat(args.load):
             print("Continuing conversation...")
-    else:
-        cm.new_chat()
 
     cm.chat_loop()
 
