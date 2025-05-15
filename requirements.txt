@@ -8,7 +8,7 @@ requests
 transformers
 torch
 accelerate
-
+docling
 
 # Text processing
 sentence-transformers

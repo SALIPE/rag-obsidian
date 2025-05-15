@@ -30,30 +30,8 @@ A terminal-based Research Assistant using RAG (Retrieval-Augmented Generation) t
    git clone https://github.com/yourusername/obsidian-research-assistant.git
    cd obsidian-research-assistant
 
-## Execution
+---
 
-1. **First-time setup**:
-    ```bash
-   python -c "from rag_obsidian import ObsidianRAG; ObsidianRAG().process_vault()"
-2. **Start new chat**:
-   ```bash
-   python rag_obsidian.py --new
-3. **Load previous conversation**:
-   ```bash
-   python rag_obsidian.py --load conversations/chat_20231025.md
-4. **List all conversation**:
-   ```bash
-   python rag_obsidian.py --list
+## References
 
-### Example Session
-```bash
-$ python rag_obsidian.py --new
-New chat started: chat_20231025_143022.md
-
-Chat with your Obsidian knowledge (type 'exit' to quit)
-
-You: What's the main hypothesis in my climate paper?
-Assistant: According to your paper in research/climate_study.pdf...
-
-You: What supporting evidence do I have?
-Assistant: Your annotations in notes/field_observations.md suggest...
+[Docling](https://docling-project.github.io/docling/usage/enrichments/#formula-understanding)
